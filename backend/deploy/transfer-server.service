@@ -1,0 +1,19 @@
+[Unit]
+Description=Transfer Backend Service
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/transfer/backend
+EnvironmentFile=/opt/transfer/backend/.env
+ExecStart=/opt/transfer/backend/transfer-server
+Restart=always
+RestartSec=3
+User=root
+Group=root
+StandardOutput=append:/opt/transfer/backend/server.log
+StandardError=append:/opt/transfer/backend/server.log
+
+[Install]
+WantedBy=multi-user.target

@@ -3,3 +3,5 @@ backend/.env
 backend/uploads/
 backend/.gocache/
 backend/.gomodcache/
+backend/transfer-server
+*.md
