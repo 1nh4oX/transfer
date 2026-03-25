@@ -1,0 +1,808 @@
+openapi: 3.0.3
+info:
+  title: Transfer Service API
+  version: 1.1.0
+  description: |
+    API contract for a cross-platform file transfer tool.
+    Auth model: JWT bearer token.
+servers:
+  - url: https://api.example.com
+    description: Production
+  - url: http://localhost:8080
+    description: Local development
+
+tags:
+  - name: Auth
+  - name: Files
+  - name: Folders
+  - name: Shares
+
+paths:
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login with username and password
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/tree:
+    get:
+      tags: [Folders]
+      summary: Get full folder tree and files (current user scope)
+      operationId: getTree
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Tree data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TreeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/folders:
+    post:
+      tags: [Folders]
+      summary: Create a folder under parent folder
+      operationId: createFolder
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFolderRequest'
+      responses:
+        '201':
+          description: Folder created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FolderItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/folders/{folderId}/move:
+    patch:
+      tags: [Folders]
+      summary: Move a folder to another parent
+      operationId: moveFolder
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: folderId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MoveFolderRequest'
+      responses:
+        '200':
+          description: Folder moved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FolderItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/files:
+    get:
+      tags: [Files]
+      summary: List files in a folder
+      operationId: listFiles
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: folderId
+          required: false
+          description: Root folder when omitted
+          schema:
+            type: string
+            nullable: true
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - in: query
+          name: pageSize
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: File list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListFilesResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/files/upload:
+    post:
+      tags: [Files]
+      summary: Upload one file
+      operationId: uploadFile
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                folderId:
+                  type: string
+                  nullable: true
+                  description: Target folder id; root when omitted
+      responses:
+        '201':
+          description: Upload success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/files/{fileId}/download:
+    get:
+      tags: [Files]
+      summary: Download file by id
+      operationId: downloadFile
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: fileId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: File stream
+          headers:
+            Content-Disposition:
+              description: Attachment filename
+              schema:
+                type: string
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/files/{fileId}/move:
+    patch:
+      tags: [Files]
+      summary: Move a file to another folder
+      operationId: moveFile
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: fileId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MoveFileRequest'
+      responses:
+        '200':
+          description: File moved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/files/{fileId}/preview:
+    get:
+      tags: [Files]
+      summary: Get preview metadata for a file
+      operationId: getFilePreview
+      description: |
+        First phase preview types: image, markdown, text, pdf.
+        Office docs may return previewType=unsupported in first phase.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: fileId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Preview metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FilePreviewResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/files/{fileId}/content:
+    get:
+      tags: [Files]
+      summary: Get text/markdown content for inline preview
+      operationId: getFileContent
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: fileId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Text-like content
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileContentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/files/{fileId}:
+    delete:
+      tags: [Files]
+      summary: Delete file by id
+      operationId: deleteFile
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: fileId
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Delete success
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/shares:
+    post:
+      tags: [Shares]
+      summary: Create a share link for a file or folder
+      operationId: createShare
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateShareRequest'
+      responses:
+        '201':
+          description: Share created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShareInfo'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/s/{token}:
+    get:
+      tags: [Shares]
+      summary: Get share metadata by token (public, no auth)
+      operationId: getShareInfo
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Share metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShareMeta'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          description: Share link has expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/s/{token}/download:
+    get:
+      tags: [Shares]
+      summary: Download shared content by token (public, no auth)
+      operationId: downloadShare
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: File stream (single file) or zip archive (folder)
+          headers:
+            Content-Disposition:
+              description: Attachment filename
+              schema:
+                type: string
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          description: Share link has expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '501':
+          description: Folder download not yet implemented
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          example: admin
+        password:
+          type: string
+          format: password
+          example: change_me
+
+    LoginResponse:
+      type: object
+      required: [token, tokenType, expiresIn]
+      properties:
+        token:
+          type: string
+          description: JWT token
+        tokenType:
+          type: string
+          example: Bearer
+        expiresIn:
+          type: integer
+          description: Expiration seconds
+          example: 7200
+
+    FolderItem:
+      type: object
+      required: [id, name, parentId, createdAt]
+      properties:
+        id:
+          type: string
+          example: d_01HZXA7J9QW2M3P4N5R6
+        name:
+          type: string
+          example: docs
+        parentId:
+          type: string
+          nullable: true
+          example: null
+        createdAt:
+          type: string
+          format: date-time
+          example: 2026-03-24T12:30:00Z
+
+    FileItem:
+      type: object
+      required: [id, name, size, mimeType, ext, folderId, createdAt, downloadUrl]
+      properties:
+        id:
+          type: string
+          example: f_01HZXA7J9QW2M3P4N5R6
+        name:
+          type: string
+          example: project-plan.pdf
+        size:
+          type: integer
+          format: int64
+          example: 102400
+        mimeType:
+          type: string
+          example: application/pdf
+        ext:
+          type: string
+          example: pdf
+        folderId:
+          type: string
+          nullable: true
+          example: d_01HZXA7J9QW2M3P4N5R6
+        createdAt:
+          type: string
+          format: date-time
+          example: 2026-03-24T12:30:00Z
+        downloadUrl:
+          type: string
+          example: /api/files/f_01HZXA7J9QW2M3P4N5R6/download
+
+    TreeNode:
+      type: object
+      required: [folder, children, files]
+      properties:
+        folder:
+          $ref: '#/components/schemas/FolderItem'
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/TreeNode'
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileItem'
+
+    TreeResponse:
+      type: object
+      required: [rootFolders]
+      properties:
+        rootFolders:
+          type: array
+          items:
+            $ref: '#/components/schemas/TreeNode'
+
+    CreateFolderRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+          example: docs
+        parentId:
+          type: string
+          nullable: true
+          example: null
+
+    MoveFileRequest:
+      type: object
+      required: [targetFolderId]
+      properties:
+        targetFolderId:
+          type: string
+          nullable: true
+          description: null means move to root
+          example: d_01HZXA7J9QW2M3P4N5R6
+
+    MoveFolderRequest:
+      type: object
+      required: [targetParentId]
+      properties:
+        targetParentId:
+          type: string
+          nullable: true
+          description: null means move to root
+          example: d_01HZXA7J9QW2M3P4N5R6
+
+    ListFilesResponse:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileItem'
+        page:
+          type: integer
+          example: 1
+        pageSize:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          example: 42
+
+    FilePreviewResponse:
+      type: object
+      required: [fileId, previewType, supported]
+      properties:
+        fileId:
+          type: string
+          example: f_01HZXA7J9QW2M3P4N5R6
+        previewType:
+          type: string
+          enum: [image, markdown, text, pdf, office, unsupported]
+          example: image
+        supported:
+          type: boolean
+          example: true
+        previewUrl:
+          type: string
+          nullable: true
+          description: Direct URL for image/pdf preview
+          example: /api/files/f_01HZXA7J9QW2M3P4N5R6/download
+        contentEndpoint:
+          type: string
+          nullable: true
+          description: Endpoint for markdown/text preview content
+          example: /api/files/f_01HZXA7J9QW2M3P4N5R6/content
+        note:
+          type: string
+          nullable: true
+          example: Office preview requires conversion service.
+
+    FileContentResponse:
+      type: object
+      required: [fileId, contentType, content]
+      properties:
+        fileId:
+          type: string
+          example: f_01HZXA7J9QW2M3P4N5R6
+        contentType:
+          type: string
+          enum: [text/plain, text/markdown]
+          example: text/markdown
+        content:
+          type: string
+          example: "# Hello\nThis is markdown preview."
+
+    CreateShareRequest:
+      type: object
+      required: [itemType, itemId]
+      properties:
+        itemType:
+          type: string
+          enum: [file, folder]
+          example: file
+        itemId:
+          type: string
+          description: ID of the file or folder to share
+          example: f_01HZXA7J9QW2M3P4N5R6
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Optional expiry time; null means never expires
+          example: "2026-04-01T00:00:00Z"
+
+    ShareInfo:
+      type: object
+      required: [token, shareUrl, itemType, itemId, createdAt]
+      properties:
+        token:
+          type: string
+          example: aB3kR7mXpQ2wZv
+        shareUrl:
+          type: string
+          description: Full public URL to access the share
+          example: http://your-host/api/s/aB3kR7mXpQ2wZv
+        itemType:
+          type: string
+          enum: [file, folder]
+        itemId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    ShareMeta:
+      type: object
+      required: [token, itemType, name, createdAt]
+      properties:
+        token:
+          type: string
+        itemType:
+          type: string
+          enum: [file, folder]
+        name:
+          type: string
+          description: Display name of the shared item
+          example: project-plan.pdf
+        size:
+          type: integer
+          format: int64
+          nullable: true
+          description: File size in bytes (null for folders)
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    ErrorResponse:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          example: INVALID_CREDENTIALS
+        message:
+          type: string
+          example: Username or password is incorrect.
+        requestId:
+          type: string
+          example: req_01J2AA3M8T4D2Q9M
+
+  responses:
+    BadRequest:
+      description: Invalid request payload/params
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: BAD_REQUEST
+            message: Invalid request.
+
+    Unauthorized:
+      description: Missing or invalid token / wrong credentials
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: UNAUTHORIZED
+            message: Authentication required.
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: FILE_NOT_FOUND
+            message: File not found.
+
+    Conflict:
+      description: Conflict such as duplicate folder name or invalid move target
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: CONFLICT
+            message: Target folder already has same name.
+
+    PayloadTooLarge:
+      description: Uploaded file exceeds server limit
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: FILE_TOO_LARGE
+            message: File exceeds max allowed size.
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: INTERNAL_ERROR
+            message: Unexpected server error.

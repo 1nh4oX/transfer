@@ -1,0 +1,5 @@
+*.pem
+backend/.env
+backend/uploads/
+backend/.gocache/
+backend/.gomodcache/
