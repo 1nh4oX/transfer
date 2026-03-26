@@ -25,7 +25,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.authService.Login(req)
+	resp, err := h.authService.Login(c.Request.Context(), req)
 	if err != nil {
 		if errors.Is(err, service.ErrInvalidCredential) {
 			c.JSON(http.StatusUnauthorized, model.ErrorResponse{Code: "UNAUTHORIZED", Message: "Username or password is incorrect."})
@@ -36,4 +36,24 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+func (h *AuthHandler) Register(c *gin.Context) {
+	var req model.RegisterRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ErrorResponse{Code: "BAD_REQUEST", Message: "Invalid request."})
+		return
+	}
+
+	resp, err := h.authService.Register(c.Request.Context(), req)
+	if err != nil {
+		if errors.Is(err, service.ErrUsernameTaken) {
+			c.JSON(http.StatusConflict, model.ErrorResponse{Code: "USERNAME_TAKEN", Message: "Username already exists."})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, model.ErrorResponse{Code: "INTERNAL_ERROR", Message: "Unexpected server error."})
+		return
+	}
+
+	c.JSON(http.StatusCreated, resp)
 }

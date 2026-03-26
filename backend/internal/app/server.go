@@ -23,11 +23,9 @@ func NewServer() (*Server, error) {
 	cfg := config.Load()
 
 	engine := gin.New()
-	engine.Use(gin.Logger(), gin.Recovery())
+	engine.Use(gin.Logger(), gin.Recovery(), middleware.CORS())
 
 	healthHandler := handler.NewHealthHandler()
-	authService := service.NewAuthService(cfg)
-	authHandler := handler.NewAuthHandler(authService)
 
 	db, err := repo.NewPostgresDB(cfg.DatabaseURL)
 	if err != nil {
@@ -36,6 +34,7 @@ func NewServer() (*Server, error) {
 	shareRepo := repo.NewPostgresShareRepository(db)
 	fileRepo := repo.NewPostgresFileRepository(db)
 	noteRepo := repo.NewPostgresNoteRepository(db)
+	userRepo := repo.NewPostgresUserRepository(db)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := shareRepo.InitSchema(ctx); err != nil {
@@ -47,7 +46,12 @@ func NewServer() (*Server, error) {
 	if err := noteRepo.InitSchema(ctx); err != nil {
 		return nil, err
 	}
+	if err := userRepo.InitSchema(ctx); err != nil {
+		return nil, err
+	}
 
+	authService := service.NewAuthService(cfg, userRepo)
+	authHandler := handler.NewAuthHandler(authService)
 	fileService, err := service.NewFileService(fileRepo, cfg.UploadDir)
 	if err != nil {
 		return nil, err
@@ -63,6 +67,7 @@ func NewServer() (*Server, error) {
 	api := engine.Group("/api")
 	{
 		api.POST("/auth/login", authHandler.Login)
+		api.POST("/auth/register", authHandler.Register)
 
 		// Public share routes — no JWT required
 		api.GET("/s/:token", shareHandler.GetShareInfo)
@@ -70,13 +75,13 @@ func NewServer() (*Server, error) {
 
 		authed := api.Group("", middleware.JWTAuth(cfg.JWTSecret))
 		{
-			authed.GET("/tree", fileHandler.NotImplemented)
-			authed.POST("/folders", fileHandler.NotImplemented)
-			authed.PATCH("/folders/:folderId/move", fileHandler.NotImplemented)
+			authed.GET("/tree", fileHandler.GetTree)
+			authed.POST("/folders", fileHandler.CreateFolder)
+			authed.PATCH("/folders/:folderId/move", fileHandler.MoveFolder)
 			authed.GET("/files", fileHandler.List)
 			authed.POST("/files/upload", fileHandler.Upload)
 			authed.GET("/files/:fileId/download", fileHandler.DownloadByID)
-			authed.PATCH("/files/:fileId/move", fileHandler.NotImplemented)
+			authed.PATCH("/files/:fileId/move", fileHandler.MoveByID)
 			authed.GET("/files/:fileId/preview", fileHandler.NotImplemented)
 			authed.GET("/files/:fileId/content", fileHandler.NotImplemented)
 			authed.DELETE("/files/:fileId", fileHandler.DeleteByID)

@@ -41,6 +41,10 @@ func (h *FileHandler) Upload(c *gin.Context) {
 
 	fileItem, err := h.fileService.Upload(c.Request.Context(), currentUser, fileHeader, folderID)
 	if err != nil {
+		if errors.Is(err, service.ErrFolderNotFound) {
+			c.JSON(http.StatusNotFound, model.ErrorResponse{Code: "FOLDER_NOT_FOUND", Message: "Folder not found."})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, model.ErrorResponse{Code: "INTERNAL_ERROR", Message: "Failed to upload file."})
 		return
 	}
@@ -117,7 +121,122 @@ func (h *FileHandler) List(c *gin.Context) {
 
 	resp, err := h.fileService.ListByOwner(c.Request.Context(), currentUser, folderID, page, pageSize)
 	if err != nil {
+		if errors.Is(err, service.ErrFolderNotFound) {
+			c.JSON(http.StatusNotFound, model.ErrorResponse{Code: "FOLDER_NOT_FOUND", Message: "Folder not found."})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, model.ErrorResponse{Code: "INTERNAL_ERROR", Message: "Failed to list files."})
+		return
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+func (h *FileHandler) MoveByID(c *gin.Context) {
+	currentUser, ok := middleware.CurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, model.ErrorResponse{Code: "UNAUTHORIZED", Message: "Authentication required."})
+		return
+	}
+
+	fileID := c.Param("fileId")
+	var req model.MoveFileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ErrorResponse{Code: "BAD_REQUEST", Message: "Invalid request."})
+		return
+	}
+
+	item, err := h.fileService.MoveFileByOwner(c.Request.Context(), currentUser, fileID, req.TargetFolderID)
+	if err != nil {
+		if errors.Is(err, service.ErrFileNotFound) {
+			c.JSON(http.StatusNotFound, model.ErrorResponse{Code: "FILE_NOT_FOUND", Message: "File not found."})
+			return
+		}
+		if errors.Is(err, service.ErrFolderNotFound) {
+			c.JSON(http.StatusNotFound, model.ErrorResponse{Code: "FOLDER_NOT_FOUND", Message: "Folder not found."})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, model.ErrorResponse{Code: "INTERNAL_ERROR", Message: "Failed to move file."})
+		return
+	}
+
+	c.JSON(http.StatusOK, item)
+}
+
+func (h *FileHandler) CreateFolder(c *gin.Context) {
+	currentUser, ok := middleware.CurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, model.ErrorResponse{Code: "UNAUTHORIZED", Message: "Authentication required."})
+		return
+	}
+
+	var req model.CreateFolderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ErrorResponse{Code: "BAD_REQUEST", Message: "Invalid request."})
+		return
+	}
+
+	item, err := h.fileService.CreateFolder(c.Request.Context(), currentUser, req.Name, req.ParentID)
+	if err != nil {
+		if errors.Is(err, service.ErrFolderNotFound) {
+			c.JSON(http.StatusNotFound, model.ErrorResponse{Code: "FOLDER_NOT_FOUND", Message: "Folder not found."})
+			return
+		}
+		if errors.Is(err, service.ErrFolderConflict) {
+			c.JSON(http.StatusConflict, model.ErrorResponse{Code: "FOLDER_CONFLICT", Message: "Folder with same name already exists."})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, model.ErrorResponse{Code: "INTERNAL_ERROR", Message: "Failed to create folder."})
+		return
+	}
+
+	c.JSON(http.StatusCreated, item)
+}
+
+func (h *FileHandler) MoveFolder(c *gin.Context) {
+	currentUser, ok := middleware.CurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, model.ErrorResponse{Code: "UNAUTHORIZED", Message: "Authentication required."})
+		return
+	}
+
+	folderID := c.Param("folderId")
+	var req model.MoveFolderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ErrorResponse{Code: "BAD_REQUEST", Message: "Invalid request."})
+		return
+	}
+
+	item, err := h.fileService.MoveFolderByOwner(c.Request.Context(), currentUser, folderID, req.TargetParentID)
+	if err != nil {
+		if errors.Is(err, service.ErrFolderNotFound) {
+			c.JSON(http.StatusNotFound, model.ErrorResponse{Code: "FOLDER_NOT_FOUND", Message: "Folder not found."})
+			return
+		}
+		if errors.Is(err, service.ErrFolderConflict) {
+			c.JSON(http.StatusConflict, model.ErrorResponse{Code: "FOLDER_CONFLICT", Message: "Folder with same name already exists."})
+			return
+		}
+		if errors.Is(err, service.ErrInvalidFolderMove) {
+			c.JSON(http.StatusBadRequest, model.ErrorResponse{Code: "INVALID_MOVE", Message: "Cannot move folder into itself or its descendant."})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, model.ErrorResponse{Code: "INTERNAL_ERROR", Message: "Failed to move folder."})
+		return
+	}
+
+	c.JSON(http.StatusOK, item)
+}
+
+func (h *FileHandler) GetTree(c *gin.Context) {
+	currentUser, ok := middleware.CurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, model.ErrorResponse{Code: "UNAUTHORIZED", Message: "Authentication required."})
+		return
+	}
+
+	resp, err := h.fileService.GetTreeByOwner(c.Request.Context(), currentUser)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, model.ErrorResponse{Code: "INTERNAL_ERROR", Message: "Failed to load tree."})
 		return
 	}
 	c.JSON(http.StatusOK, resp)

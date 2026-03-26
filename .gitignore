@@ -1,7 +1,18 @@
+# Secrets
 *.pem
 backend/.env
+frontend/.env.local
+frontend/.env.*.local
+
+# Build outputs
+backend/transfer-server
 backend/uploads/
+frontend/dist/
+
+# Caches
+.gocache/
 backend/.gocache/
 backend/.gomodcache/
-backend/transfer-server
-*.md
+
+# OS/editor noise
+.DS_Store

@@ -17,7 +17,12 @@ import (
 	"transfer/backend/internal/repo"
 )
 
-var ErrFileNotFound = errors.New("file not found")
+var (
+	ErrFileNotFound      = errors.New("file not found")
+	ErrFolderNotFound    = errors.New("folder not found")
+	ErrFolderConflict    = errors.New("folder name conflict")
+	ErrInvalidFolderMove = errors.New("invalid folder move")
+)
 
 type FileService struct {
 	repo      repo.FileRepository
@@ -35,6 +40,15 @@ func NewFileService(fileRepo repo.FileRepository, uploadDir string) (*FileServic
 }
 
 func (s *FileService) Upload(ctx context.Context, ownerID string, fileHeader *multipart.FileHeader, folderID *string) (model.FileItem, error) {
+	if folderID != nil {
+		if _, err := s.repo.GetFolderByIDAndOwner(ctx, *folderID, ownerID); err != nil {
+			if errors.Is(err, repo.ErrNotFound) {
+				return model.FileItem{}, ErrFolderNotFound
+			}
+			return model.FileItem{}, err
+		}
+	}
+
 	fileID, err := generateID("f")
 	if err != nil {
 		return model.FileItem{}, err
@@ -123,6 +137,15 @@ func (s *FileService) GetPublicFile(ctx context.Context, fileID string) (model.F
 }
 
 func (s *FileService) ListByOwner(ctx context.Context, ownerID string, folderID *string, page, pageSize int) (model.ListFilesResponse, error) {
+	if folderID != nil {
+		if _, err := s.repo.GetFolderByIDAndOwner(ctx, *folderID, ownerID); err != nil {
+			if errors.Is(err, repo.ErrNotFound) {
+				return model.ListFilesResponse{}, ErrFolderNotFound
+			}
+			return model.ListFilesResponse{}, err
+		}
+	}
+
 	offset := (page - 1) * pageSize
 	recs, total, err := s.repo.ListFilesByOwner(ctx, ownerID, folderID, pageSize, offset)
 	if err != nil {
@@ -157,6 +180,189 @@ func (s *FileService) DeleteByOwner(ctx context.Context, ownerID, fileID string)
 	return nil
 }
 
+func (s *FileService) MoveFileByOwner(ctx context.Context, ownerID, fileID string, targetFolderID *string) (model.FileItem, error) {
+	if targetFolderID != nil {
+		if _, err := s.repo.GetFolderByIDAndOwner(ctx, *targetFolderID, ownerID); err != nil {
+			if errors.Is(err, repo.ErrNotFound) {
+				return model.FileItem{}, ErrFolderNotFound
+			}
+			return model.FileItem{}, err
+		}
+	}
+
+	rec, err := s.repo.MoveFileByIDAndOwner(ctx, fileID, ownerID, targetFolderID)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			return model.FileItem{}, ErrFileNotFound
+		}
+		return model.FileItem{}, err
+	}
+	return toModelFile(rec), nil
+}
+
+func (s *FileService) CreateFolder(ctx context.Context, ownerID, name string, parentID *string) (model.FolderItem, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return model.FolderItem{}, errors.New("folder name is required")
+	}
+	if parentID != nil {
+		if _, err := s.repo.GetFolderByIDAndOwner(ctx, *parentID, ownerID); err != nil {
+			if errors.Is(err, repo.ErrNotFound) {
+				return model.FolderItem{}, ErrFolderNotFound
+			}
+			return model.FolderItem{}, err
+		}
+	}
+
+	exists, err := s.repo.FolderNameExistsInParent(ctx, ownerID, parentID, name, nil)
+	if err != nil {
+		return model.FolderItem{}, err
+	}
+	if exists {
+		return model.FolderItem{}, ErrFolderConflict
+	}
+
+	folderID, err := generateID("d")
+	if err != nil {
+		return model.FolderItem{}, err
+	}
+	createdAt := time.Now().UTC()
+	if err := s.repo.CreateFolder(ctx, repo.CreateFolderParams{
+		ID:        folderID,
+		OwnerID:   ownerID,
+		ParentID:  parentID,
+		Name:      name,
+		CreatedAt: createdAt,
+	}); err != nil {
+		return model.FolderItem{}, err
+	}
+	return model.FolderItem{ID: folderID, Name: name, ParentID: parentID, CreatedAt: createdAt}, nil
+}
+
+func (s *FileService) MoveFolderByOwner(ctx context.Context, ownerID, folderID string, targetParentID *string) (model.FolderItem, error) {
+	current, err := s.repo.GetFolderByIDAndOwner(ctx, folderID, ownerID)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			return model.FolderItem{}, ErrFolderNotFound
+		}
+		return model.FolderItem{}, err
+	}
+
+	if targetParentID != nil {
+		target, err := s.repo.GetFolderByIDAndOwner(ctx, *targetParentID, ownerID)
+		if err != nil {
+			if errors.Is(err, repo.ErrNotFound) {
+				return model.FolderItem{}, ErrFolderNotFound
+			}
+			return model.FolderItem{}, err
+		}
+		if target.ID == folderID {
+			return model.FolderItem{}, ErrInvalidFolderMove
+		}
+		folders, err := s.repo.ListFoldersByOwner(ctx, ownerID)
+		if err != nil {
+			return model.FolderItem{}, err
+		}
+		if isDescendant(folders, folderID, target.ID) {
+			return model.FolderItem{}, ErrInvalidFolderMove
+		}
+	}
+
+	exists, err := s.repo.FolderNameExistsInParent(ctx, ownerID, targetParentID, current.Name, &folderID)
+	if err != nil {
+		return model.FolderItem{}, err
+	}
+	if exists {
+		return model.FolderItem{}, ErrFolderConflict
+	}
+
+	rec, err := s.repo.MoveFolderByIDAndOwner(ctx, folderID, ownerID, targetParentID)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			return model.FolderItem{}, ErrFolderNotFound
+		}
+		return model.FolderItem{}, err
+	}
+	return toModelFolder(rec), nil
+}
+
+func (s *FileService) GetTreeByOwner(ctx context.Context, ownerID string) (model.TreeResponse, error) {
+	folders, err := s.repo.ListFoldersByOwner(ctx, ownerID)
+	if err != nil {
+		return model.TreeResponse{}, err
+	}
+	files, err := s.repo.ListAllFilesByOwner(ctx, ownerID)
+	if err != nil {
+		return model.TreeResponse{}, err
+	}
+
+	folderByID := make(map[string]repo.FolderRecord, len(folders))
+	children := make(map[string][]repo.FolderRecord)
+	rootFolders := make([]repo.FolderRecord, 0)
+	for _, f := range folders {
+		folderByID[f.ID] = f
+		if f.ParentID == nil {
+			rootFolders = append(rootFolders, f)
+			continue
+		}
+		children[*f.ParentID] = append(children[*f.ParentID], f)
+	}
+
+	filesByFolder := make(map[string][]model.FileItem)
+	rootFiles := make([]model.FileItem, 0)
+	for _, rec := range files {
+		item := toModelFile(rec)
+		if rec.FolderID == nil {
+			rootFiles = append(rootFiles, item)
+			continue
+		}
+		if _, ok := folderByID[*rec.FolderID]; !ok {
+			rootFiles = append(rootFiles, item)
+			continue
+		}
+		filesByFolder[*rec.FolderID] = append(filesByFolder[*rec.FolderID], item)
+	}
+
+	_ = rootFiles // reserved for future root files in contract if needed
+
+	var build func(repo.FolderRecord) model.TreeNode
+	build = func(folder repo.FolderRecord) model.TreeNode {
+		node := model.TreeNode{
+			Folder:   toModelFolder(folder),
+			Children: make([]model.TreeNode, 0),
+			Files:    filesByFolder[folder.ID],
+		}
+		for _, child := range children[folder.ID] {
+			node.Children = append(node.Children, build(child))
+		}
+		return node
+	}
+
+	resp := model.TreeResponse{RootFolders: make([]model.TreeNode, 0, len(rootFolders))}
+	for _, root := range rootFolders {
+		resp.RootFolders = append(resp.RootFolders, build(root))
+	}
+	return resp, nil
+}
+
+func isDescendant(folders []repo.FolderRecord, ancestorID, maybeDescendantID string) bool {
+	parentByID := make(map[string]*string, len(folders))
+	for _, f := range folders {
+		parentByID[f.ID] = f.ParentID
+	}
+	current := maybeDescendantID
+	for {
+		parent, ok := parentByID[current]
+		if !ok || parent == nil {
+			return false
+		}
+		if *parent == ancestorID {
+			return true
+		}
+		current = *parent
+	}
+}
+
 func toModelFile(rec repo.FileRecord) model.FileItem {
 	return model.FileItem{
 		ID:          rec.ID,
@@ -169,6 +375,15 @@ func toModelFile(rec repo.FileRecord) model.FileItem {
 		DownloadURL: "/api/files/" + rec.ID + "/download",
 		StoragePath: rec.StoragePath,
 		OwnerID:     rec.OwnerID,
+	}
+}
+
+func toModelFolder(rec repo.FolderRecord) model.FolderItem {
+	return model.FolderItem{
+		ID:        rec.ID,
+		Name:      rec.Name,
+		ParentID:  rec.ParentID,
+		CreatedAt: rec.CreatedAt,
 	}
 }
 
