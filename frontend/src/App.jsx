@@ -64,7 +64,7 @@ function Toast({ message, type }) {
 
 function LoginPage({ onLogin, showToast }) {
   const [mode, setMode] = useState('login')
-  const [username, setUsername] = useState('admin')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -209,14 +209,19 @@ function PreviewModal({ file, onClose, token }) {
   const [officeSrc, setOfficeSrc] = useState('')
   const [officeDownloadUrl, setOfficeDownloadUrl] = useState('')
   const [officePreviewError, setOfficePreviewError] = useState(false)
+  const [officePreviewMessage, setOfficePreviewMessage] = useState('')
+  const [officeLoaded, setOfficeLoaded] = useState(false)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     let revoked = ''
+    let officeTimeout = 0
     const run = async () => {
       if (!file?.id) return
       if (kind !== 'image' && kind !== 'pdf' && kind !== 'text' && kind !== 'office') return
       setOfficePreviewError(false)
+      setOfficePreviewMessage('')
+      setOfficeLoaded(false)
       setOfficeSrc('')
       setOfficeDownloadUrl('')
       setLoading(true)
@@ -231,13 +236,27 @@ function PreviewModal({ file, onClose, token }) {
             token,
           )
           const publicDownloadUrl = `${share.shareUrl}/download`
+          if (publicDownloadUrl.startsWith('http://')) {
+            setOfficePreviewError(true)
+            setOfficePreviewMessage('Office 在线预览通常需要 HTTPS 公网链接，当前为 HTTP，请直接下载查看。')
+            setOfficeDownloadUrl(publicDownloadUrl)
+            return
+          }
           const officeUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(publicDownloadUrl)}`
           setOfficeDownloadUrl(publicDownloadUrl)
           setOfficeSrc(officeUrl)
+          officeTimeout = window.setTimeout(() => {
+            setOfficePreviewError(true)
+            setOfficePreviewMessage('预览服务响应超时，请直接下载查看。')
+          }, 12000)
         } else {
+          const ctrl = new AbortController()
+          const timeout = window.setTimeout(() => ctrl.abort(), 12000)
           const res = await fetch(`${API_BASE}/api/files/${file.id}/download`, {
             headers: { Authorization: `Bearer ${token}` },
+            signal: ctrl.signal,
           })
+          window.clearTimeout(timeout)
           if (!res.ok) throw new Error('加载预览失败')
           if (kind === 'text') {
             setTextContent(await res.text())
@@ -251,6 +270,9 @@ function PreviewModal({ file, onClose, token }) {
       } catch {
         if (kind === 'office') {
           setOfficePreviewError(true)
+          if (!officePreviewMessage) {
+            setOfficePreviewMessage('Office 在线预览失败，请直接下载查看。')
+          }
         }
         setTextContent('预览暂不可用，请直接下载。')
       } finally {
@@ -259,6 +281,7 @@ function PreviewModal({ file, onClose, token }) {
     }
     run()
     return () => {
+      if (officeTimeout) window.clearTimeout(officeTimeout)
       if (revoked) URL.revokeObjectURL(revoked)
     }
   }, [file, kind, token])
@@ -287,12 +310,19 @@ function PreviewModal({ file, onClose, token }) {
               title="office"
               src={officeSrc}
               className="w-full h-[70vh] border rounded-xl bg-white"
-              onError={() => setOfficePreviewError(true)}
+              onLoad={() => setOfficeLoaded(true)}
+              onError={() => {
+                setOfficePreviewError(true)
+                setOfficePreviewMessage('Office 在线预览失败，请直接下载查看。')
+              }}
             />
+          )}
+          {!loading && kind === 'office' && officeSrc && !officePreviewError && !officeLoaded && (
+            <p className="text-slate-500 mt-2">正在加载 Office 预览...</p>
           )}
           {!loading && kind === 'office' && officePreviewError && (
             <div className="space-y-3">
-              <p className="text-slate-500">Word/Excel/PPT 在线预览失败，请直接下载查看。</p>
+              <p className="text-slate-500">{officePreviewMessage || 'Word/Excel/PPT 在线预览失败，请直接下载查看。'}</p>
               <a
                 href={officeDownloadUrl || '#'}
                 className="inline-flex items-center gap-2 bg-slate-800 text-white px-4 py-2 rounded-xl"
@@ -339,12 +369,34 @@ function ShareModal({ file, onClose, token, showToast }) {
 
   const copyUrl = async () => {
     if (!url) return
+    const fallbackCopy = () => {
+      const textarea = document.createElement('textarea')
+      textarea.value = url
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.focus()
+      textarea.select()
+      const ok = document.execCommand('copy')
+      document.body.removeChild(textarea)
+      return ok
+    }
+
     try {
-      await navigator.clipboard.writeText(url)
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(url)
+      } else if (!fallbackCopy()) {
+        throw new Error('copy-failed')
+      }
       showToast('链接已复制')
       onClose()
     } catch {
-      showToast('复制失败，请手动复制', 'error')
+      if (fallbackCopy()) {
+        showToast('链接已复制')
+        onClose()
+      } else {
+        showToast('复制失败，请手动复制', 'error')
+      }
     }
   }
 

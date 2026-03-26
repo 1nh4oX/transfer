@@ -8,6 +8,7 @@ frontend/.env.*.local
 backend/transfer-server
 backend/uploads/
 frontend/dist/
+frontend/dist.tar.gz
 
 # Caches
 .gocache/
