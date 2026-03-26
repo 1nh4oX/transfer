@@ -833,7 +833,7 @@ export default function App() {
           <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-white shadow-sm">
             <FileBox size={18} />
           </div>
-          <span className="font-semibold text-lg tracking-tight">CloudSpace</span>
+          <span className="font-semibold text-lg tracking-tight">Mono&apos;s CloudSpace</span>
         </div>
         <button onClick={logout} className={`p-2 rounded-full hover:bg-slate-200/50 text-slate-500 hover:text-slate-800 ${SPRING_TRANSITION}`}>
           <LogOut size={18} />
