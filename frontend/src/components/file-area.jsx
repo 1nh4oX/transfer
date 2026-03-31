@@ -423,7 +423,7 @@ export default function FileArea({ token, showToast, tree, currentFolderID, onSe
   }
 
   return (
-    <section className={`${mobile ? 'h-full' : 'flex-1'} min-h-0 flex flex-col relative ${GLASS_PANEL} rounded-3xl overflow-hidden`}>
+    <section className={`${mobile ? 'w-full h-full' : 'flex-1'} min-h-0 flex flex-col relative ${GLASS_PANEL} rounded-3xl overflow-hidden`}>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4 sm:p-6 border-b border-white/50">
         <div>
           <h2 className="text-xl font-bold tracking-tight">我的文件</h2>
@@ -466,7 +466,7 @@ export default function FileArea({ token, showToast, tree, currentFolderID, onSe
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain [webkit-overflow-scrolling:touch] p-4 sm:p-6 [padding-bottom:calc(env(safe-area-inset-bottom)+1rem)]">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain [webkit-overflow-scrolling:touch] [touch-action:pan-y] p-4 sm:p-6 [padding-bottom:calc(env(safe-area-inset-bottom)+1rem)]">
         {childFolders.length > 0 && (
           <div className="mb-4 flex flex-wrap gap-2">
             {childFolders.map((folder) => (

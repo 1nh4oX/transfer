@@ -97,7 +97,7 @@ function LoginPage({ onLogin, showToast }) {
           <div className="w-12 h-12 bg-slate-800 rounded-2xl flex items-center justify-center text-white mx-auto mb-4">
             <FileBox size={24} />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-800">登录 CloudSpace</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-800">登录 Mono's CloudSpace</h1>
           <p className="text-sm text-slate-500 mt-2">输入账号密码即可登录或注册</p>
         </div>
 
