@@ -286,6 +286,38 @@ func (s *FileService) MoveFolderByOwner(ctx context.Context, ownerID, folderID s
 	return toModelFolder(rec), nil
 }
 
+func (s *FileService) RenameFolderByOwner(ctx context.Context, ownerID, folderID, name string) (model.FolderItem, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return model.FolderItem{}, errors.New("folder name is required")
+	}
+
+	current, err := s.repo.GetFolderByIDAndOwner(ctx, folderID, ownerID)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			return model.FolderItem{}, ErrFolderNotFound
+		}
+		return model.FolderItem{}, err
+	}
+
+	exists, err := s.repo.FolderNameExistsInParent(ctx, ownerID, current.ParentID, name, &folderID)
+	if err != nil {
+		return model.FolderItem{}, err
+	}
+	if exists {
+		return model.FolderItem{}, ErrFolderConflict
+	}
+
+	rec, err := s.repo.RenameFolderByIDAndOwner(ctx, folderID, ownerID, name)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			return model.FolderItem{}, ErrFolderNotFound
+		}
+		return model.FolderItem{}, err
+	}
+	return toModelFolder(rec), nil
+}
+
 func (s *FileService) GetTreeByOwner(ctx context.Context, ownerID string) (model.TreeResponse, error) {
 	folders, err := s.repo.ListFoldersByOwner(ctx, ownerID)
 	if err != nil {

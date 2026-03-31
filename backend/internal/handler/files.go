@@ -227,6 +227,37 @@ func (h *FileHandler) MoveFolder(c *gin.Context) {
 	c.JSON(http.StatusOK, item)
 }
 
+func (h *FileHandler) RenameFolder(c *gin.Context) {
+	currentUser, ok := middleware.CurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, model.ErrorResponse{Code: "UNAUTHORIZED", Message: "Authentication required."})
+		return
+	}
+
+	folderID := c.Param("folderId")
+	var req model.RenameFolderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ErrorResponse{Code: "BAD_REQUEST", Message: "Invalid request."})
+		return
+	}
+
+	item, err := h.fileService.RenameFolderByOwner(c.Request.Context(), currentUser, folderID, req.Name)
+	if err != nil {
+		if errors.Is(err, service.ErrFolderNotFound) {
+			c.JSON(http.StatusNotFound, model.ErrorResponse{Code: "FOLDER_NOT_FOUND", Message: "Folder not found."})
+			return
+		}
+		if errors.Is(err, service.ErrFolderConflict) {
+			c.JSON(http.StatusConflict, model.ErrorResponse{Code: "FOLDER_CONFLICT", Message: "Folder with same name already exists."})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, model.ErrorResponse{Code: "INTERNAL_ERROR", Message: "Failed to rename folder."})
+		return
+	}
+
+	c.JSON(http.StatusOK, item)
+}
+
 func (h *FileHandler) GetTree(c *gin.Context) {
 	currentUser, ok := middleware.CurrentUser(c)
 	if !ok {

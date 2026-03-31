@@ -78,6 +78,7 @@ func NewServer() (*Server, error) {
 			authed.GET("/tree", fileHandler.GetTree)
 			authed.POST("/folders", fileHandler.CreateFolder)
 			authed.PATCH("/folders/:folderId/move", fileHandler.MoveFolder)
+			authed.PATCH("/folders/:folderId/rename", fileHandler.RenameFolder)
 			authed.GET("/files", fileHandler.List)
 			authed.POST("/files/upload", fileHandler.Upload)
 			authed.GET("/files/:fileId/download", fileHandler.DownloadByID)

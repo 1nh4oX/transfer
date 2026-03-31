@@ -73,6 +73,13 @@ function LoginPage({ onLogin, showToast }) {
   const submit = async (e) => {
     e.preventDefault()
     setErrorMessage('')
+    const cleanUsername = username.trim()
+    if (!cleanUsername || !password) {
+      const msg = '请输入用户名和密码'
+      setErrorMessage(msg)
+      showToast(msg, 'error')
+      return
+    }
     if (mode === 'register' && password !== confirmPassword) {
       setErrorMessage('两次密码不一致')
       showToast('两次密码不一致', 'error')
@@ -83,13 +90,17 @@ function LoginPage({ onLogin, showToast }) {
       const path = mode === 'register' ? '/api/auth/register' : '/api/auth/login'
       const data = await apiFetch(path, {
         method: 'POST',
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username: cleanUsername, password }),
       })
+      if (!data?.token || typeof data.token !== 'string') {
+        throw new Error('登录接口返回异常：缺少 token')
+      }
       onLogin(data.token)
       showToast(mode === 'register' ? '注册并登录成功' : '登录成功')
     } catch (err) {
-      setErrorMessage(err.message || '登录/注册失败')
-      showToast(err.message, 'error')
+      const msg = err instanceof Error ? err.message : '登录/注册失败'
+      setErrorMessage(msg)
+      showToast(msg, 'error')
     } finally {
       setLoading(false)
     }
@@ -163,7 +174,7 @@ function LoginPage({ onLogin, showToast }) {
   )
 }
 
-function Sidebar({ tree, currentFolderID, onSelectFolder }) {
+function Sidebar({ tree, currentFolderID, onSelectFolder, mobile = false }) {
   const renderNodes = (nodes, depth = 0) => {
     return (nodes || []).map((node) => {
       const active = currentFolderID === node.folder.id
@@ -186,7 +197,7 @@ function Sidebar({ tree, currentFolderID, onSelectFolder }) {
   }
 
   return (
-    <aside className={`hidden lg:flex w-64 flex-col ${GLASS_PANEL} rounded-3xl p-5 shrink-0`}>
+    <aside className={`${mobile ? 'w-full h-full' : 'hidden lg:flex w-64 shrink-0'} flex flex-col ${GLASS_PANEL} rounded-3xl p-5`}>
       <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4 px-2">目录</h3>
       <button
         onClick={() => onSelectFolder(null)}
@@ -242,6 +253,7 @@ function PreviewModal({ file, onClose, token }) {
             setOfficeDownloadUrl(publicDownloadUrl)
             return
           }
+
           const officeUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(publicDownloadUrl)}`
           setOfficeDownloadUrl(publicDownloadUrl)
           setOfficeSrc(officeUrl)
@@ -270,15 +282,15 @@ function PreviewModal({ file, onClose, token }) {
       } catch {
         if (kind === 'office') {
           setOfficePreviewError(true)
-          if (!officePreviewMessage) {
-            setOfficePreviewMessage('Office 在线预览失败，请直接下载查看。')
-          }
+          setOfficePreviewMessage('Office 在线预览失败，请直接下载查看。')
+        } else {
+          setTextContent('预览暂不可用，请直接下载。')
         }
-        setTextContent('预览暂不可用，请直接下载。')
       } finally {
         setLoading(false)
       }
     }
+
     run()
     return () => {
       if (officeTimeout) window.clearTimeout(officeTimeout)
@@ -296,12 +308,11 @@ function PreviewModal({ file, onClose, token }) {
             <X size={18} />
           </button>
         </div>
+
         <div className="flex-1 overflow-auto p-6 min-h-[400px] bg-slate-50/50">
           {loading && <p className="text-slate-500">加载中...</p>}
           {!loading && kind === 'image' && blobUrl && <img src={blobUrl} alt={file.name} className="max-h-[70vh] mx-auto" />}
-          {!loading && kind === 'pdf' && blobUrl && (
-            <iframe title="pdf" src={blobUrl} className="w-full h-[70vh] border rounded-xl bg-white" />
-          )}
+          {!loading && kind === 'pdf' && blobUrl && <iframe title="pdf" src={blobUrl} className="w-full h-[70vh] border rounded-xl bg-white" />}
           {!loading && kind === 'text' && (
             <pre className="w-full bg-white p-4 rounded-xl text-sm text-slate-700 overflow-auto border">{textContent}</pre>
           )}
@@ -323,10 +334,7 @@ function PreviewModal({ file, onClose, token }) {
           {!loading && kind === 'office' && officePreviewError && (
             <div className="space-y-3">
               <p className="text-slate-500">{officePreviewMessage || 'Word/Excel/PPT 在线预览失败，请直接下载查看。'}</p>
-              <a
-                href={officeDownloadUrl || '#'}
-                className="inline-flex items-center gap-2 bg-slate-800 text-white px-4 py-2 rounded-xl"
-              >
+              <a href={officeDownloadUrl || '#'} className="inline-flex items-center gap-2 bg-slate-800 text-white px-4 py-2 rounded-xl">
                 <Download size={16} /> 下载文件
               </a>
             </div>
@@ -420,10 +428,7 @@ function ShareModal({ file, onClose, token, showToast }) {
           <>
             <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-600 font-mono break-all">{url}</div>
             <p className="mt-2 text-xs text-slate-500 break-all">信息地址：{metaUrl}</p>
-            <button
-              onClick={copyUrl}
-              className="mt-4 w-full flex items-center justify-center gap-2 bg-slate-800 text-white py-3 rounded-xl font-medium"
-            >
+            <button onClick={copyUrl} className="mt-4 w-full flex items-center justify-center gap-2 bg-slate-800 text-white py-3 rounded-xl font-medium">
               <Copy size={16} /> 复制链接
             </button>
           </>
@@ -434,7 +439,7 @@ function ShareModal({ file, onClose, token, showToast }) {
   )
 }
 
-function FileArea({ token, showToast, tree, currentFolderID, onSelectFolder, refreshTree, totalUsedBytes = 0 }) {
+function FileArea({ token, showToast, tree, currentFolderID, onSelectFolder, refreshTree, totalUsedBytes = 0, mobile = false }) {
   const [files, setFiles] = useState([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
@@ -445,7 +450,6 @@ function FileArea({ token, showToast, tree, currentFolderID, onSelectFolder, ref
   const currentNode = currentFolderID ? findNodeByFolderID(tree, currentFolderID) : null
   const currentFolderName = currentNode?.folder?.name || 'Root'
   const childFolders = currentFolderID == null ? tree.map((n) => n.folder) : (currentNode?.children || []).map((n) => n.folder)
-
   const usagePercent = Math.min(100, Math.round((totalUsedBytes / USER_QUOTA_BYTES) * 100))
 
   const loadFiles = async () => {
@@ -481,31 +485,33 @@ function FileArea({ token, showToast, tree, currentFolderID, onSelectFolder, ref
     setUploading(true)
     const uploaded = []
     let failed = 0
+
     try {
       for (const file of selected) {
         const formData = new FormData()
         formData.append('file', file)
-        if (currentFolderID) {
-          formData.append('folderId', currentFolderID)
-        }
+        if (currentFolderID) formData.append('folderId', currentFolderID)
+
         try {
           const item = await apiFetch('/api/files/upload', { method: 'POST', body: formData }, token)
           uploaded.push(item)
-        } catch {
+        } catch (err) {
+          if (String(err?.message || '').includes('413')) {
+            showToast('上传失败：文件过大或网关限制（请检查 Nginx client_max_body_size）', 'error')
+            break
+          }
           failed += 1
         }
       }
 
       if (uploaded.length > 0) {
         setFiles((prev) => [...uploaded, ...prev])
-      }
-      if (uploaded.length > 0) {
         refreshTree()
       }
       if (failed === 0) {
         showToast(`已上传 ${uploaded.length} 个文件`)
       } else {
-        showToast(`上传完成：成功 ${uploaded.length}，失败 ${failed}`, failed > 0 ? 'error' : 'success')
+        showToast(`上传完成：成功 ${uploaded.length}，失败 ${failed}`, 'error')
       }
     } finally {
       setUploading(false)
@@ -516,6 +522,7 @@ function FileArea({ token, showToast, tree, currentFolderID, onSelectFolder, ref
   const createFolder = async () => {
     const name = window.prompt('新建文件夹名称：')
     if (!name || !name.trim()) return
+
     try {
       await apiFetch(
         '/api/folders',
@@ -526,6 +533,31 @@ function FileArea({ token, showToast, tree, currentFolderID, onSelectFolder, ref
         token,
       )
       showToast('文件夹创建成功')
+      refreshTree()
+    } catch (err) {
+      showToast(err.message, 'error')
+    }
+  }
+
+  const renameCurrentFolder = async () => {
+    if (!currentFolderID) {
+      showToast('根目录不可重命名', 'error')
+      return
+    }
+    const oldName = currentNode?.folder?.name || ''
+    const nextName = window.prompt('重命名文件夹：', oldName)
+    if (!nextName || !nextName.trim() || nextName.trim() === oldName) return
+
+    try {
+      await apiFetch(
+        `/api/folders/${currentFolderID}/rename`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ name: nextName.trim() }),
+        },
+        token,
+      )
+      showToast('文件夹已重命名')
       refreshTree()
     } catch (err) {
       showToast(err.message, 'error')
@@ -571,16 +603,32 @@ function FileArea({ token, showToast, tree, currentFolderID, onSelectFolder, ref
       const a = document.createElement('a')
       a.href = url
       a.download = file.name
+      a.style.display = 'none'
+      document.body.appendChild(a)
       a.click()
+      document.body.removeChild(a)
       URL.revokeObjectURL(url)
     } catch (err) {
-      showToast(err.message, 'error')
+      try {
+        const share = await apiFetch(
+          '/api/shares',
+          {
+            method: 'POST',
+            body: JSON.stringify({ itemType: 'file', itemId: file.id }),
+          },
+          token,
+        )
+        window.open(`${share.shareUrl}/download`, '_blank', 'noopener,noreferrer')
+        showToast('已使用分享链接下载')
+      } catch {
+        showToast(err.message, 'error')
+      }
     }
   }
 
   return (
-    <section className={`flex-1 flex flex-col relative ${GLASS_PANEL} rounded-3xl overflow-hidden`}>
-      <div className="flex items-center justify-between p-6 border-b border-white/50">
+    <section className={`${mobile ? 'h-full' : 'flex-1'} min-h-0 flex flex-col relative ${GLASS_PANEL} rounded-3xl overflow-hidden`}>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4 sm:p-6 border-b border-white/50">
         <div>
           <h2 className="text-xl font-bold tracking-tight">我的文件</h2>
           <p className="text-xs text-slate-500 mt-1">{currentFolderName}</p>
@@ -590,14 +638,12 @@ function FileArea({ token, showToast, tree, currentFolderID, onSelectFolder, ref
               <span>{formatBytes(totalUsedBytes)} / 2.00 GB</span>
             </div>
             <div className="h-2 rounded-full bg-slate-200/70 overflow-hidden">
-              <div
-                className={`h-full ${usagePercent > 90 ? 'bg-red-500' : 'bg-slate-700'}`}
-                style={{ width: `${usagePercent}%` }}
-              ></div>
+              <div className={`h-full ${usagePercent > 90 ? 'bg-red-500' : 'bg-slate-700'}`} style={{ width: `${usagePercent}%` }}></div>
             </div>
           </div>
         </div>
-        <div className="relative flex items-center gap-2">
+
+        <div className="relative flex items-center gap-2 flex-wrap">
           <button
             onClick={createFolder}
             className="flex items-center gap-2 bg-white text-slate-700 px-4 py-2.5 rounded-full text-sm font-medium border border-slate-200"
@@ -605,15 +651,26 @@ function FileArea({ token, showToast, tree, currentFolderID, onSelectFolder, ref
             <Folder size={16} />
             <span>新建文件夹</span>
           </button>
-          <input type="file" id="file-upload" className="hidden" multiple onChange={upload} />
-          <label htmlFor="file-upload" className="flex items-center gap-2 bg-slate-800 text-white px-5 py-2.5 rounded-full text-sm font-medium cursor-pointer">
+          {currentFolderID && (
+            <button
+              onClick={renameCurrentFolder}
+              className="flex items-center gap-2 bg-white text-slate-700 px-4 py-2.5 rounded-full text-sm font-medium border border-slate-200"
+            >
+              <span>重命名当前文件夹</span>
+            </button>
+          )}
+          <input type="file" id={mobile ? 'file-upload-mobile' : 'file-upload'} className="hidden" multiple onChange={upload} />
+          <label
+            htmlFor={mobile ? 'file-upload-mobile' : 'file-upload'}
+            className="flex items-center gap-2 bg-slate-800 text-white px-5 py-2.5 rounded-full text-sm font-medium cursor-pointer"
+          >
             <UploadCloud size={16} />
             <span>{uploading ? '上传中...' : '批量上传'}</span>
           </label>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6">
         {childFolders.length > 0 && (
           <div className="mb-4 flex flex-wrap gap-2">
             {childFolders.map((folder) => (
@@ -627,61 +684,61 @@ function FileArea({ token, showToast, tree, currentFolderID, onSelectFolder, ref
             ))}
           </div>
         )}
+
         {loading ? (
           <div className="text-slate-400">加载文件中...</div>
         ) : files.length === 0 ? (
           <div className="text-slate-400">暂无文件</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {files.map((file) => (
-              (() => {
-                const Icon = getFileIcon(file)
-                return (
-              <div key={file.id} className={`group bg-white/40 border border-white/60 p-4 rounded-2xl ${SPRING_TRANSITION} hover:-translate-y-1`}>
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 border shadow-sm p-2.5 bg-slate-50 border-slate-200/60">
-                    <Icon />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h4 className="text-sm font-medium text-slate-800 break-all line-clamp-2">{file.name}</h4>
-                    <div className="flex flex-wrap items-center gap-2 mt-1.5 text-xs text-slate-400">
-                      <span>{formatBytes(file.size)}</span>
-                      <span>{formatTime(file.createdAt)}</span>
+            {files.map((file) => {
+              const Icon = getFileIcon(file)
+              return (
+                <div key={file.id} className={`group bg-white/40 border border-white/60 p-4 rounded-2xl ${SPRING_TRANSITION} hover:-translate-y-1`}>
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 border shadow-sm p-2.5 bg-slate-50 border-slate-200/60">
+                      <Icon />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-sm font-medium text-slate-800 break-all line-clamp-2">{file.name}</h4>
+                      <div className="flex flex-wrap items-center gap-2 mt-1.5 text-xs text-slate-400">
+                        <span>{formatBytes(file.size)}</span>
+                        <span>{formatTime(file.createdAt)}</span>
+                      </div>
                     </div>
                   </div>
+
+                  <div className="mt-4 pt-3 border-t border-slate-200/60 flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                    <select
+                      defaultValue={file.folderId || '__ROOT__'}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        moveFile(file.id, v === '__ROOT__' ? null : v)
+                      }}
+                      className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white text-slate-600"
+                      title="移动到目录"
+                    >
+                      <option value="__ROOT__">移动到根目录</option>
+                      {allFolders.map((f) => (
+                        <option key={f.id} value={f.id}>{`${' '.repeat(f.depth * 2)}${f.name}`}</option>
+                      ))}
+                    </select>
+                    <button onClick={() => setPreviewFile(file)} className="p-2 bg-white rounded-full shadow-sm text-slate-500 hover:text-slate-800" title="预览">
+                      <Search size={14} />
+                    </button>
+                    <button onClick={() => setShareFile(file)} className="p-2 bg-white rounded-full shadow-sm text-slate-500 hover:text-slate-800" title="分享">
+                      <Share2 size={14} />
+                    </button>
+                    <button onClick={() => downloadFile(file)} className="p-2 bg-white rounded-full shadow-sm text-slate-500 hover:text-slate-800" title="下载">
+                      <Download size={14} />
+                    </button>
+                    <button onClick={() => removeFile(file.id)} className="p-2 bg-white rounded-full shadow-sm text-red-400 hover:text-red-600" title="删除">
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 </div>
-                <div className="mt-4 pt-3 border-t border-slate-200/60 flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
-                  <select
-                    defaultValue={file.folderId || '__ROOT__'}
-                    onChange={(e) => {
-                      const v = e.target.value
-                      moveFile(file.id, v === '__ROOT__' ? null : v)
-                    }}
-                    className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white text-slate-600"
-                    title="移动到目录"
-                  >
-                    <option value="__ROOT__">移动到根目录</option>
-                    {allFolders.map((f) => (
-                      <option key={f.id} value={f.id}>{`${' '.repeat(f.depth * 2)}${f.name}`}</option>
-                    ))}
-                  </select>
-                  <button onClick={() => setPreviewFile(file)} className="p-2 bg-white rounded-full shadow-sm text-slate-500 hover:text-slate-800" title="预览">
-                    <Search size={14} />
-                  </button>
-                  <button onClick={() => setShareFile(file)} className="p-2 bg-white rounded-full shadow-sm text-slate-500 hover:text-slate-800" title="分享">
-                    <Share2 size={14} />
-                  </button>
-                  <button onClick={() => downloadFile(file)} className="p-2 bg-white rounded-full shadow-sm text-slate-500 hover:text-slate-800" title="下载">
-                    <Download size={14} />
-                  </button>
-                  <button onClick={() => removeFile(file.id)} className="p-2 bg-white rounded-full shadow-sm text-red-400 hover:text-red-600" title="删除">
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-                )
-              })()
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
@@ -692,7 +749,7 @@ function FileArea({ token, showToast, tree, currentFolderID, onSelectFolder, ref
   )
 }
 
-function NotesArea({ token, showToast }) {
+function NotesArea({ token, showToast, mobile = false }) {
   const [notes, setNotes] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -733,7 +790,7 @@ function NotesArea({ token, showToast }) {
   }
 
   return (
-    <aside className={`w-[360px] h-full min-h-0 flex flex-col ${GLASS_PANEL} rounded-3xl overflow-hidden shrink-0`}>
+    <aside className={`${mobile ? 'w-full h-full' : 'w-[360px] h-full shrink-0'} min-h-0 flex flex-col ${GLASS_PANEL} rounded-3xl overflow-hidden`}>
       <div className="p-4 border-b border-white/50 bg-white/30 flex items-center justify-between">
         <div>
           <h3 className="font-semibold text-sm text-slate-800 tracking-wide">速记对话框</h3>
@@ -796,6 +853,7 @@ export default function App() {
   const [tree, setTree] = useState([])
   const [currentFolderID, setCurrentFolderID] = useState(null)
   const [totalUsedBytes, setTotalUsedBytes] = useState(0)
+  const [mobileView, setMobileView] = useState('files')
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type })
@@ -812,6 +870,7 @@ export default function App() {
     localStorage.setItem(TOKEN_KEY, nextToken)
     setToken(nextToken)
     setCurrentFolderID(null)
+    setMobileView('files')
   }
 
   const loadTree = async () => {
@@ -878,21 +937,22 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen bg-[#f4f5f7] text-slate-800 font-sans overflow-x-auto overflow-y-hidden flex flex-col">
+    <div className="h-screen bg-[#f4f5f7] text-slate-800 font-sans overflow-hidden flex flex-col">
       <Toast message={toast.message} type={toast.type} />
-      <header className={`h-16 ${GLASS_PANEL} rounded-b-2xl mx-4 mt-2 flex items-center justify-between px-6 z-10 shrink-0`}>
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-white shadow-sm">
+
+      <header className={`h-16 ${GLASS_PANEL} rounded-b-2xl mx-3 sm:mx-4 mt-2 flex items-center justify-between px-4 sm:px-6 z-10 shrink-0`}>
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-white shadow-sm shrink-0">
             <FileBox size={18} />
           </div>
-          <span className="font-semibold text-lg tracking-tight">Mono&apos;s CloudSpace</span>
+          <span className="font-semibold text-base sm:text-lg tracking-tight truncate">Mono&apos;s CloudSpace</span>
         </div>
         <button onClick={logout} className={`p-2 rounded-full hover:bg-slate-200/50 text-slate-500 hover:text-slate-800 ${SPRING_TRANSITION}`}>
           <LogOut size={18} />
         </button>
       </header>
 
-      <main className="flex-1 min-h-0 flex overflow-hidden p-4 gap-4 max-w-[1600px] mx-auto w-full min-w-[1320px]">
+      <main className="hidden lg:flex flex-1 min-h-0 overflow-hidden p-4 gap-4 max-w-[1600px] mx-auto w-full">
         <Sidebar tree={tree} currentFolderID={currentFolderID} onSelectFolder={setCurrentFolderID} />
         <FileArea
           token={token}
@@ -904,6 +964,48 @@ export default function App() {
           totalUsedBytes={totalUsedBytes}
         />
         <NotesArea token={token} showToast={showToast} />
+      </main>
+
+      <main className="lg:hidden flex-1 min-h-0 overflow-hidden p-3 flex flex-col gap-3">
+        <div className={`${GLASS_PANEL} rounded-2xl p-1 grid grid-cols-3 gap-1 shrink-0`}>
+          <button
+            onClick={() => setMobileView('files')}
+            className={`py-2 rounded-xl text-sm font-medium ${mobileView === 'files' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500'}`}
+          >
+            Files
+          </button>
+          <button
+            onClick={() => setMobileView('notes')}
+            className={`py-2 rounded-xl text-sm font-medium ${mobileView === 'notes' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500'}`}
+          >
+            Notes
+          </button>
+          <button
+            onClick={() => setMobileView('folders')}
+            className={`py-2 rounded-xl text-sm font-medium ${mobileView === 'folders' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500'}`}
+          >
+            Folders
+          </button>
+        </div>
+
+        <div className="flex-1 min-h-0 overflow-hidden">
+          {mobileView === 'files' && (
+            <FileArea
+              mobile
+              token={token}
+              showToast={showToast}
+              tree={tree}
+              currentFolderID={currentFolderID}
+              onSelectFolder={setCurrentFolderID}
+              refreshTree={loadTree}
+              totalUsedBytes={totalUsedBytes}
+            />
+          )}
+          {mobileView === 'notes' && <NotesArea mobile token={token} showToast={showToast} />}
+          {mobileView === 'folders' && (
+            <Sidebar mobile tree={tree} currentFolderID={currentFolderID} onSelectFolder={setCurrentFolderID} />
+          )}
+        </div>
       </main>
     </div>
   )

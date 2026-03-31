@@ -62,6 +62,7 @@ type FileRepository interface {
 	GetFolderByIDAndOwner(ctx context.Context, folderID, ownerID string) (FolderRecord, error)
 	ListFoldersByOwner(ctx context.Context, ownerID string) ([]FolderRecord, error)
 	MoveFolderByIDAndOwner(ctx context.Context, folderID, ownerID string, targetParentID *string) (FolderRecord, error)
+	RenameFolderByIDAndOwner(ctx context.Context, folderID, ownerID, name string) (FolderRecord, error)
 	FolderNameExistsInParent(ctx context.Context, ownerID string, parentID *string, name string, excludeFolderID *string) (bool, error)
 }
 
@@ -372,6 +373,29 @@ RETURNING id, owner_id, parent_id, name, created_at;
 			return FolderRecord{}, ErrNotFound
 		}
 		return FolderRecord{}, fmt.Errorf("move folder: %w", err)
+	}
+	return rec, nil
+}
+
+func (r *PostgresFileRepository) RenameFolderByIDAndOwner(ctx context.Context, folderID, ownerID, name string) (FolderRecord, error) {
+	const q = `
+UPDATE folders
+SET name = $3
+WHERE id = $1 AND owner_id = $2
+RETURNING id, owner_id, parent_id, name, created_at;
+`
+	var rec FolderRecord
+	if err := r.db.QueryRowContext(ctx, q, folderID, ownerID, name).Scan(
+		&rec.ID,
+		&rec.OwnerID,
+		&rec.ParentID,
+		&rec.Name,
+		&rec.CreatedAt,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return FolderRecord{}, ErrNotFound
+		}
+		return FolderRecord{}, fmt.Errorf("rename folder: %w", err)
 	}
 	return rec, nil
 }
